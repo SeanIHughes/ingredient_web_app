@@ -19,12 +19,13 @@ class _ScanViewState extends State<ScanView> {
   bool showCamera = true;
   bool isIngredientsExpanded = false;
   bool isLoading = false;
-  String productName = "Ready to Scan"; // Default
+  String productName = "Ready to Scan";
   String ingredientsText = "Scan a barcode to begin...";
   List<IngredientMatch> matches = [];
   String sortMode = "Science Says";
   List<String> userPrefs = [];
 
+  // Verified URL for Local Proxy
   final String baseUrl = "https://192.168.1.226:8001";
 
   @override
@@ -38,37 +39,6 @@ class _ScanViewState extends State<ScanView> {
     setState(() => userPrefs = prefs.getStringList('user_prefs') ?? []);
   }
 
-  // Helper for Conflicts
-  String? _getPersonalConflictLabel(String name) {
-    final n = name.toLowerCase().trim();
-    final Map<String, List<String>> triggers = {
-      "Peanuts": ["peanut", "groundnut", "arachis"],
-      "Dairy": ["milk", "whey", "lactose", "casein", "cheese", "butter"],
-      "Gluten": ["wheat", "barley", "rye", "malt", "gluten"],
-      "Soy": ["soy", "soya", "lecithin"],
-      "Eggs": ["egg", "yolk", "albumin"],
-      "Vegan": ["milk", "egg", "honey", "beef", "chicken", "pork", "gelatin"],
-    };
-    for (var pref in userPrefs) {
-      if (triggers.containsKey(pref)) {
-        for (var keyword in triggers[pref]!) {
-          if (n.contains(keyword.toLowerCase())) return "$pref ALLERGY";
-        }
-      }
-    }
-    return null;
-  }
-
-  List<IngredientMatch> get sortedMatches {
-    List<IngredientMatch> sorted = List.from(matches);
-    if (sortMode == "Science Says") {
-      sorted.sort((a, b) => b.riskScoreNum.compareTo(a.riskScoreNum));
-    } else {
-      sorted.sort((a, b) => b.sentimentNum.compareTo(a.sentimentNum));
-    }
-    return sorted;
-  }
-
   Future<void> processBarcode(String code) async {
     final cleanCode = code.trim();
     if (cleanCode.isEmpty) return;
@@ -80,6 +50,8 @@ class _ScanViewState extends State<ScanView> {
     try {
       String finalName = "Unknown Product";
       String finalIngredients = "";
+
+      // 1. Check OpenFoodFacts
       final offResp = await http.get(Uri.parse(
           "https://world.openfoodfacts.org/api/v2/product/$cleanCode.json"));
       if (offResp.statusCode == 200) {
@@ -89,16 +61,20 @@ class _ScanViewState extends State<ScanView> {
           finalIngredients = offData['product']['ingredients_text'] ?? "";
         }
       }
+
+      // 2. Check Local Database via Proxy
       final localResp =
           await http.get(Uri.parse("$baseUrl/lookup-upc/$cleanCode"));
       if (localResp.statusCode == 200) {
         final localData = jsonDecode(localResp.body);
         if (localData['ingredients_text'] != null) {
           finalIngredients = localData['ingredients_text'];
-          if (finalName == "Unknown Product")
+          if (finalName == "Unknown Product") {
             finalName = localData['product_name'] ?? "Product Found";
+          }
         }
       }
+
       if (finalIngredients.isNotEmpty) {
         await _getScienceScores(finalName, finalIngredients);
       } else {
@@ -141,10 +117,19 @@ class _ScanViewState extends State<ScanView> {
     });
   }
 
+  List<IngredientMatch> get sortedMatches {
+    List<IngredientMatch> sorted = List.from(matches);
+    if (sortMode == "Science Says") {
+      sorted.sort((a, b) => b.riskScoreNum.compareTo(a.riskScoreNum));
+    } else {
+      sorted.sort((a, b) => b.sentimentNum.compareTo(a.sentimentNum));
+    }
+    return sorted;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // VERSION BAR - THIS IS WHERE IT SAYS V1.1
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(30),
         child: Container(
@@ -163,7 +148,13 @@ class _ScanViewState extends State<ScanView> {
           if (showCamera)
             _CameraSection(onDetect: (code) => processBarcode(code))
           else
-            const SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ElevatedButton(
+                onPressed: () => setState(() => showCamera = true),
+                child: const Text("Scan Another Item"),
+              ),
+            ),
           if (isLoading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
           else
@@ -179,6 +170,11 @@ class _ScanViewState extends State<ScanView> {
                   if (matches.isNotEmpty)
                     ...sortedMatches.map(
                         (m) => IngredientRow(item: m, isPersonalTrigger: false))
+                  else if (!showCamera && !isLoading)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(ingredientsText),
+                    ),
                 ],
               ),
             ),
@@ -188,21 +184,62 @@ class _ScanViewState extends State<ScanView> {
   }
 }
 
-class _CameraSection extends StatelessWidget {
+class _CameraSection extends StatefulWidget {
   final Function(String) onDetect;
   const _CameraSection({required this.onDetect});
+
+  @override
+  State<_CameraSection> createState() => _CameraSectionState();
+}
+
+class _CameraSectionState extends State<_CameraSection> {
+  bool _activated = false;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 300,
       margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: MobileScanner(onDetect: (capture) {
-          final barcodes = capture.barcodes;
-          if (barcodes.isNotEmpty) onDetect(barcodes.first.rawValue ?? "");
-        }),
+        child: _activated
+            ? MobileScanner(
+                onDetect: (capture) {
+                  final barcodes = capture.barcodes;
+                  if (barcodes.isNotEmpty) {
+                    final String code = barcodes.first.rawValue ?? "";
+                    if (code.isNotEmpty) widget.onDetect(code);
+                  }
+                },
+              )
+            : Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.camera_alt, color: Colors.white, size: 40),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                      ),
+                      onPressed: () => setState(() => _activated = true),
+                      child: const Text("Tap to Start Camera"),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Text(
+                        "Required by Safari to enable lens",
+                        style: TextStyle(color: Colors.white70, fontSize: 10),
+                      ),
+                    )
+                  ],
+                ),
+              ),
       ),
     );
   }
