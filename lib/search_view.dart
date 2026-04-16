@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart'; // Added for debugPrint
 import 'models.dart';
 import 'widgets.dart';
 
@@ -21,7 +22,8 @@ class _SearchViewState extends State<SearchView> {
   Timer? _debounce;
   final TextEditingController _controller = TextEditingController();
 
-  final String _baseUrl = "http://192.168.1.226:8000";
+  // Updated to HTTPS and Port 8001 for the Secure Proxy
+  final String _baseUrl = "https://192.168.1.226:8001";
 
   @override
   void initState() {
@@ -95,6 +97,7 @@ class _SearchViewState extends State<SearchView> {
         });
       }
     } catch (e) {
+      debugPrint("Search Suggestion Error: $e");
       setState(() => _isLoading = false);
     }
   }
@@ -139,7 +142,12 @@ class _SearchViewState extends State<SearchView> {
         );
       }
     } catch (e) {
-      print("Search Detail Error: $e");
+      debugPrint("Search Detail Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Connection Error. Check Proxy settings.")),
+        );
+      }
     }
   }
 
@@ -178,6 +186,7 @@ class _SearchViewState extends State<SearchView> {
               ),
             ),
           ),
+          if (_isLoading) const LinearProgressIndicator(color: Colors.green),
           Expanded(
             child: ListView.separated(
               itemCount: _suggestions.length,
@@ -262,7 +271,6 @@ class _ScienceDetailModal extends StatelessWidget {
                         fontSize: 11,
                         letterSpacing: 1.5)),
                 const SizedBox(height: 25),
-
                 if (isTrigger)
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -282,8 +290,6 @@ class _ScienceDetailModal extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                // --- NEW: THE SCORE BADGES ROW ---
                 Row(
                   children: [
                     _scoreBadge("Science Says", item.riskScore ?? "Unknown",
@@ -293,7 +299,6 @@ class _ScienceDetailModal extends StatelessWidget {
                         socialColor),
                   ],
                 ),
-
                 const SizedBox(height: 30),
                 _buildDataRow("EXECUTIVE SUMMARY",
                     item.summary ?? "No scientific summary available."),
