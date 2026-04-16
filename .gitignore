@@ -1,0 +1,10 @@
+/build/
+/.dart_tool/
+/.pub-cache/
+/ios/
+/android/
+/windows/
+/linux/
+/macos/
+*.csv
+*.parquet
