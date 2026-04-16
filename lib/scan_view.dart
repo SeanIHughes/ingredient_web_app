@@ -17,7 +17,6 @@ class ScanView extends StatefulWidget {
 
 class _ScanViewState extends State<ScanView> {
   bool showCamera = true;
-  bool isIngredientsExpanded = false;
   bool isLoading = false;
   String productName = "Ready to Scan";
   String ingredientsText = "Scan a barcode to begin...";
@@ -25,7 +24,6 @@ class _ScanViewState extends State<ScanView> {
   String sortMode = "Science Says";
   List<String> userPrefs = [];
 
-  // Verified URL for Local Proxy
   final String baseUrl = "https://192.168.1.226:8001";
 
   @override
@@ -51,7 +49,6 @@ class _ScanViewState extends State<ScanView> {
       String finalName = "Unknown Product";
       String finalIngredients = "";
 
-      // 1. Check OpenFoodFacts
       final offResp = await http.get(Uri.parse(
           "https://world.openfoodfacts.org/api/v2/product/$cleanCode.json"));
       if (offResp.statusCode == 200) {
@@ -62,7 +59,6 @@ class _ScanViewState extends State<ScanView> {
         }
       }
 
-      // 2. Check Local Database via Proxy
       final localResp =
           await http.get(Uri.parse("$baseUrl/lookup-upc/$cleanCode"));
       if (localResp.statusCode == 200) {
@@ -117,16 +113,6 @@ class _ScanViewState extends State<ScanView> {
     });
   }
 
-  List<IngredientMatch> get sortedMatches {
-    List<IngredientMatch> sorted = List.from(matches);
-    if (sortMode == "Science Says") {
-      sorted.sort((a, b) => b.riskScoreNum.compareTo(a.riskScoreNum));
-    } else {
-      sorted.sort((a, b) => b.sentimentNum.compareTo(a.sentimentNum));
-    }
-    return sorted;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,7 +121,7 @@ class _ScanViewState extends State<ScanView> {
         child: Container(
           color: Colors.red,
           child: const Center(
-            child: Text("DEPLOYMENT VERIFIED: V1.1",
+            child: Text("DEPLOYMENT VERIFIED: V1.2",
                 style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -165,16 +151,11 @@ class _ScanViewState extends State<ScanView> {
                     padding: const EdgeInsets.all(20),
                     child: Text(productName,
                         style: const TextStyle(
-                            fontSize: 26, fontWeight: FontWeight.w900)),
+                            fontSize: 26, fontWeight: FontWeight.bold)),
                   ),
                   if (matches.isNotEmpty)
-                    ...sortedMatches.map(
+                    ...matches.map(
                         (m) => IngredientRow(item: m, isPersonalTrigger: false))
-                  else if (!showCamera && !isLoading)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Text(ingredientsText),
-                    ),
                 ],
               ),
             ),
@@ -194,6 +175,23 @@ class _CameraSection extends StatefulWidget {
 
 class _CameraSectionState extends State<_CameraSection> {
   bool _activated = false;
+  // Initialize controller immediately to "claim" the hardware promise
+  late MobileScannerController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = MobileScannerController(
+      facing: CameraFacing.back,
+      detectionSpeed: DetectionSpeed.normal,
+    );
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -201,43 +199,23 @@ class _CameraSectionState extends State<_CameraSection> {
       height: 300,
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black87,
-        borderRadius: BorderRadius.circular(20),
-      ),
+          color: Colors.black, borderRadius: BorderRadius.circular(20)),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: _activated
             ? MobileScanner(
+                controller: controller,
                 onDetect: (capture) {
                   final barcodes = capture.barcodes;
-                  if (barcodes.isNotEmpty) {
-                    final String code = barcodes.first.rawValue ?? "";
-                    if (code.isNotEmpty) widget.onDetect(code);
-                  }
+                  if (barcodes.isNotEmpty)
+                    widget.onDetect(barcodes.first.rawValue ?? "");
                 },
               )
             : Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.camera_alt, color: Colors.white, size: 40),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                      ),
-                      onPressed: () => setState(() => _activated = true),
-                      child: const Text("Tap to Start Camera"),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Text(
-                        "Required by Safari to enable lens",
-                        style: TextStyle(color: Colors.white70, fontSize: 10),
-                      ),
-                    )
-                  ],
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text("Start Camera"),
+                  onPressed: () => setState(() => _activated = true),
                 ),
               ),
       ),
