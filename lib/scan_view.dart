@@ -17,14 +17,14 @@ class ScanView extends StatefulWidget {
 class _ScanViewState extends State<ScanView> {
   bool showCamera = true;
   bool isLoading = false;
-  String productName = "Ready to Scan";
+  String productName = "Ready to Scan"; 
   List<IngredientMatch> matches = [];
   final String baseUrl = "https://192.168.1.226:8001";
 
   Future<void> processBarcode(String code) async {
     final cleanCode = code.trim();
     if (cleanCode.isEmpty) return;
-
+    
     setState(() {
       showCamera = false;
       isLoading = true;
@@ -35,9 +35,8 @@ class _ScanViewState extends State<ScanView> {
       String finalName = "Unknown Product";
       String finalIngredients = "";
 
-      // 1. Open Food Facts Check
-      final offResp = await http.get(Uri.parse(
-          "https://world.openfoodfacts.org/api/v2/product/$cleanCode.json"));
+      // 1. Open Food Facts
+      final offResp = await http.get(Uri.parse("https://world.openfoodfacts.org/api/v2/product/$cleanCode.json"));
       if (offResp.statusCode == 200) {
         final offData = jsonDecode(offResp.body);
         if (offData['product'] != null) {
@@ -46,9 +45,8 @@ class _ScanViewState extends State<ScanView> {
         }
       }
 
-      // 2. Local Proxy Check
-      final localResp =
-          await http.get(Uri.parse("$baseUrl/lookup-upc/$cleanCode"));
+      // 2. Local Proxy
+      final localResp = await http.get(Uri.parse("$baseUrl/lookup-upc/$cleanCode"));
       if (localResp.statusCode == 200) {
         final localData = jsonDecode(localResp.body);
         if (localData['ingredients_text'] != null) {
@@ -66,22 +64,14 @@ class _ScanViewState extends State<ScanView> {
         final scoreData = jsonDecode(scoreResp.body);
         setState(() {
           productName = finalName;
-          matches = (scoreData['all_matches'] as List)
-              .map((m) => IngredientMatch.fromJson(m))
-              .toList();
+          matches = (scoreData['all_matches'] as List).map((m) => IngredientMatch.fromJson(m)).toList();
           isLoading = false;
         });
       } else {
-        setState(() {
-          productName = "Not Found";
-          isLoading = false;
-        });
+        setState(() { productName = "Not Found"; isLoading = false; });
       }
     } catch (e) {
-      setState(() {
-        productName = "Connection Error";
-        isLoading = false;
-      });
+      setState(() { productName = "Connection Error"; isLoading = false; });
     }
   }
 
@@ -93,11 +83,8 @@ class _ScanViewState extends State<ScanView> {
         child: Container(
           color: Colors.red,
           child: const Center(
-            child: Text("DIRECT-ACTION DEPLOYMENT: V1.3",
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 10)),
+            child: Text("NULL-SAFE DEPLOYMENT: V1.4",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
           ),
         ),
       ),
@@ -122,11 +109,9 @@ class _ScanViewState extends State<ScanView> {
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Text(productName,
-                        style: const TextStyle(
-                            fontSize: 26, fontWeight: FontWeight.bold)),
+                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                   ),
-                  ...matches.map(
-                      (m) => IngredientRow(item: m, isPersonalTrigger: false))
+                  ...matches.map((m) => IngredientRow(item: m, isPersonalTrigger: false))
                 ],
               ),
             ),
@@ -145,65 +130,42 @@ class _CameraSection extends StatefulWidget {
 }
 
 class _CameraSectionState extends State<_CameraSection> {
-  bool _isStarted = false;
-  // Create the controller immediately, but set autoStart to false
-  final MobileScannerController controller = MobileScannerController(
-    autoStart: false,
-    facing: CameraFacing.back,
-    detectionSpeed: DetectionSpeed.normal,
-  );
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  // The "Safari Special": Start the hardware INSIDE the button click
-  void _handleStart() async {
-    try {
-      await controller.start();
-      setState(() {
-        _isStarted = true;
-      });
-    } catch (e) {
-      // This is our debug backup
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Camera Hardware Error: $e")),
-      );
-    }
-  }
+  bool _activated = false;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 300,
       margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Colors.black, borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20)),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: _isStarted
-            ? MobileScanner(
-                controller: controller,
-                onDetect: (capture) {
-                  final barcode = capture.barcodes.first.rawValue;
-                  if (barcode != null) widget.onDetect(barcode);
-                },
-              )
-            : Center(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text("Start Scanner"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                  ),
-                  onPressed: _handleStart, // DIRECT GESTURE
+        child: _activated 
+          ? MobileScanner(
+              // We do NOT pass a controller here. 
+              // Letting the widget create its own internal controller 
+              // is the safest way to avoid Null Check errors.
+              onDetect: (capture) {
+                final barcode = capture.barcodes.first.rawValue;
+                if (barcode != null) widget.onDetect(barcode);
+              },
+            )
+          : Center(
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.camera_alt),
+                label: const Text("Start Scanner"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 ),
+                onPressed: () {
+                  setState(() {
+                    _activated = true;
+                  });
+                },
               ),
+            ),
       ),
     );
   }
