@@ -17,14 +17,14 @@ class ScanView extends StatefulWidget {
 class _ScanViewState extends State<ScanView> {
   bool showCamera = true;
   bool isLoading = false;
-  String productName = "Ready to Scan"; 
+  String productName = "Ready to Scan";
   List<IngredientMatch> matches = [];
   final String baseUrl = "https://192.168.1.226:8001";
 
   Future<void> processBarcode(String code) async {
     final cleanCode = code.trim();
     if (cleanCode.isEmpty) return;
-    
+
     setState(() {
       showCamera = false;
       isLoading = true;
@@ -32,11 +32,12 @@ class _ScanViewState extends State<ScanView> {
     });
 
     try {
-      // 1. Open Food Facts
-      final offResp = await http.get(Uri.parse("https://world.openfoodfacts.org/api/v2/product/$cleanCode.json"));
+      // 1. Fetch from Open Food Facts
+      final offResp = await http.get(Uri.parse(
+          "https://world.openfoodfacts.org/api/v2/product/$cleanCode.json"));
       String name = "Unknown Product";
       String ingredients = "";
-      
+
       if (offResp.statusCode == 200) {
         final data = jsonDecode(offResp.body);
         if (data['product'] != null) {
@@ -45,46 +46,79 @@ class _ScanViewState extends State<ScanView> {
         }
       }
 
-      // 2. Score via Proxy
+      // 2. Score via Local Proxy
       if (ingredients.isNotEmpty) {
         final scoreResp = await http.post(
           Uri.parse("$baseUrl/score-ingredients"),
           headers: {"Content-Type": "application/json"},
           body: jsonEncode({"ingredients_text": ingredients}),
         );
-        final scoreData = jsonDecode(scoreResp.body);
-        setState(() {
-          productName = name;
-          matches = (scoreData['all_matches'] as List).map((m) => IngredientMatch.fromJson(m)).toList();
-          isLoading = false;
-        });
+        
+        if (scoreResp.statusCode == 200) {
+          final scoreData = jsonDecode(scoreResp.body);
+          final List<IngredientMatch> foundMatches = (scoreData['all_matches'] as List)
+              .map((m) => IngredientMatch.fromJson(m))
+              .toList();
+
+          setState(() {
+            productName = name;
+            matches = foundMatches;
+            isLoading = false;
+          });
+
+          // --- HISTORY LOGIC: MATCHES YOUR MODELS.商 ---
+          // Note: barcode is omitted because ScannedProduct doesn't have it.
+          final newProduct = ScannedProduct(
+            name: name,
+            date: DateTime.now(), // Changed from scanDate to date
+            ingredients: ingredients,
+            matches: foundMatches,
+          );
+          
+          widget.onScanComplete(newProduct);
+          // ------------------------------------------
+
+        } else {
+          _showError("Scoring Error");
+        }
       } else {
-        setState(() { productName = "Product Not Found"; isLoading = false; });
+        _handleError("Product Not Found");
       }
     } catch (e) {
-      setState(() { productName = "Scanner Error"; isLoading = false; });
+      _showError("Scanner Error/Connection Issues");
     }
+  }
+
+  void _showError(String msg) {
+    setState(() {
+      productName = msg;
+      isLoading = false;
+    });
+  }
+
+  void _handleError(String msg) {
+    _showError(msg);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(30),
-        child: Container(
-          color: Colors.red,
-          child: const Center(
-            child: Text("V1.6 - RAW SCANNER (NO BUTTONS)",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
-          ),
-        ),
+      appBar: AppBar(
+        title: const Text("Scan Product", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.black,
       ),
       body: Column(
         children: [
           if (showCamera)
             Container(
-              height: 350, // Slightly larger for easier scanning
+              height: 350,
               margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(20),
+              ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(20),
                 child: MobileScanner(
@@ -98,9 +132,14 @@ class _ScanViewState extends State<ScanView> {
           else
             Padding(
               padding: const EdgeInsets.all(20),
-              child: ElevatedButton(
-                onPressed: () => setState(() { showCamera = true; matches = []; productName = "Ready to Scan"; }),
-                child: const Text("Scan Another Item"),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text("Scan Another Item"),
+                onPressed: () => setState(() {
+                  showCamera = true;
+                  matches = [];
+                  productName = "Ready to Scan";
+                }),
               ),
             ),
           if (isLoading)
@@ -111,9 +150,12 @@ class _ScanViewState extends State<ScanView> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(20),
-                    child: Text(productName, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                    child: Text(productName,
+                        style: const TextStyle(
+                            fontSize: 26, fontWeight: FontWeight.bold)),
                   ),
-                  ...matches.map((m) => IngredientRow(item: m, isPersonalTrigger: false))
+                  ...matches.map(
+                      (m) => IngredientRow(item: m, isPersonalTrigger: false))
                 ],
               ),
             ),
