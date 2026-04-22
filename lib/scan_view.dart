@@ -21,7 +21,11 @@ class _ScanViewState extends State<ScanView> {
   List<IngredientMatch> matches = [];
   final String baseUrl = "https://192.168.1.226:8001";
 
+  // To track timing
+  DateTime? _scanStartTime;
+
   Future<void> processBarcode(String code) async {
+    _scanStartTime = DateTime.now(); // Mark the start of the data fetch
     final cleanCode = code.trim();
     if (cleanCode.isEmpty) return;
 
@@ -53,12 +57,17 @@ class _ScanViewState extends State<ScanView> {
           headers: {"Content-Type": "application/json"},
           body: jsonEncode({"ingredients_text": ingredients}),
         );
-        
+
         if (scoreResp.statusCode == 200) {
           final scoreData = jsonDecode(scoreResp.body);
-          final List<IngredientMatch> foundMatches = (scoreData['all_matches'] as List)
-              .map((m) => IngredientMatch.fromJson(m))
-              .toList();
+          final List<IngredientMatch> foundMatches =
+              (scoreData['all_matches'] as List)
+                  .map((m) => IngredientMatch.fromJson(m))
+                  .toList();
+
+          // Calculate total latency
+          final duration = DateTime.now().difference(_scanStartTime!);
+          print("SUCCESS: Data retrieved in ${duration.inMilliseconds}ms");
 
           setState(() {
             productName = name;
@@ -66,18 +75,14 @@ class _ScanViewState extends State<ScanView> {
             isLoading = false;
           });
 
-          // --- HISTORY LOGIC: MATCHES YOUR MODELS.商 ---
-          // Note: barcode is omitted because ScannedProduct doesn't have it.
           final newProduct = ScannedProduct(
             name: name,
-            date: DateTime.now(), // Changed from scanDate to date
+            date: DateTime.now(),
             ingredients: ingredients,
             matches: foundMatches,
           );
-          
-          widget.onScanComplete(newProduct);
-          // ------------------------------------------
 
+          widget.onScanComplete(newProduct);
         } else {
           _showError("Scoring Error");
         }
@@ -104,7 +109,8 @@ class _ScanViewState extends State<ScanView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Scan Product", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Scan Product",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black,
@@ -124,7 +130,19 @@ class _ScanViewState extends State<ScanView> {
                 child: MobileScanner(
                   onDetect: (capture) {
                     final barcode = capture.barcodes.first.rawValue;
-                    if (barcode != null) processBarcode(barcode);
+                    if (barcode != null) {
+                      // --- IMMEDIATE NOTIFICATION ---
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                              "Barcode $barcode Detected! Fetching data..."),
+                          duration: const Duration(seconds: 1),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      // ------------------------------
+                      processBarcode(barcode);
+                    }
                   },
                 ),
               ),
