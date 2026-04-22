@@ -9,7 +9,10 @@ import 'onboarding_view.dart';
 import 'models.dart';
 
 void main() async {
+  // 1. Ensure Flutter is ready before we touch SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 2. Check if the user has completed onboarding before
   final prefs = await SharedPreferences.getInstance();
   final bool seenOnboarding = prefs.getBool('seen_onboarding') ?? false;
 
@@ -33,11 +36,15 @@ class ScienceSaysApp extends StatelessWidget {
         colorSchemeSeed: Colors.green,
         scaffoldBackgroundColor: Colors.white,
       ),
+      // The home screen is determined by the main() function logic
       home: startWidget,
+
+      // Named routes for easy navigation throughout the app
       routes: {
-        // Removed 'const' here because MainNavigation/Onboarding have internal state
         '/main': (context) => const MainNavigation(),
         '/onboarding': (context) => const OnboardingView(),
+        // We can call this 'profile_edit' to distinguish it from the first-time run
+        '/edit_preferences': (context) => const OnboardingView(isEditing: true),
       },
     );
   }
@@ -60,24 +67,34 @@ class _MainNavigationState extends State<MainNavigation> {
     _loadHistory();
   }
 
+  // --- HISTORY MANAGEMENT ---
   void _loadHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final String? historyJson = prefs.getString('scan_history');
     if (historyJson != null) {
-      final List decode = jsonDecode(historyJson);
-      setState(() {
-        _history = decode.map((item) => ScannedProduct.fromJson(item)).toList();
-      });
+      try {
+        final List decode = jsonDecode(historyJson);
+        setState(() {
+          _history =
+              decode.map((item) => ScannedProduct.fromJson(item)).toList();
+        });
+      } catch (e) {
+        debugPrint("Error loading history: $e");
+      }
     }
   }
 
-  void _onScanComplete(ScannedProduct product) async {
-    setState(() => _history.insert(0, product));
+  void _onScanComplete(ScannedProduct product) {
+    setState(() {
+      _history.insert(0, product);
+    });
     _saveHistory();
   }
 
   void _deleteHistoryItem(int index) {
-    setState(() => _history.removeAt(index));
+    setState(() {
+      _history.removeAt(index);
+    });
     _saveHistory();
   }
 
@@ -88,15 +105,17 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    // --- FIXED: Removed 'const' from widgets that have internal state ---
+    // We define the pages here.
+    // ScanView and HistoryView need access to the state methods above.
     final List<Widget> pages = [
       ScanView(onScanComplete: _onScanComplete),
-      const SearchView(), // This is fine if SearchView has a const constructor
+      const SearchView(),
       HistoryView(history: _history, onDelete: _deleteHistoryItem),
-      const ProfileView(), // Removed 'const' if ProfileView throws an error
+      const ProfileView(),
     ];
 
     return Scaffold(
+      // IndexedStack keeps the state of each tab alive (doesn't reset the camera/search)
       body: IndexedStack(index: _selectedIndex, children: pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -104,6 +123,7 @@ class _MainNavigationState extends State<MainNavigation> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.green.shade800,
         unselectedItemColor: Colors.grey,
+        elevation: 8,
         items: const [
           BottomNavigationBarItem(
               icon: Icon(Icons.qr_code_scanner_rounded), label: "Scan"),
