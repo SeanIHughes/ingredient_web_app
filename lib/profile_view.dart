@@ -10,6 +10,7 @@ class ProfileView extends StatefulWidget {
 
 class _ProfileViewState extends State<ProfileView> {
   List<String> _currentPrefs = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -17,23 +18,32 @@ class _ProfileViewState extends State<ProfileView> {
     _load();
   }
 
-  _load() async {
+  // Load the preferences from storage
+  Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _currentPrefs = prefs.getStringList('user_prefs') ?? []);
+    setState(() {
+      _currentPrefs = prefs.getStringList('user_prefs') ?? [];
+      _isLoading = false;
+    });
   }
 
-  _reset() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('seen_onboarding', false);
-    if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/onboarding');
+  // PROFESSIONAL FIX: We don't "reset" the seen_onboarding flag.
+  // We simply navigate to the edit version of the page.
+  Future<void> _navigateToEdit() async {
+    // We use the named route we set up in main.dart that passes isEditing: true
+    await Navigator.pushNamed(context, '/edit_preferences');
+    
+    // When the user comes back from editing, we refresh the chips
+    _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: SafeArea(
+    // Wrapping in Scaffold provides the correct Material context 
+    // so you don't need 'TextDecoration.none' on every text widget.
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
         child: Column(
           children: [
             // 1. FIXED HEADER
@@ -41,17 +51,18 @@ class _ProfileViewState extends State<ProfileView> {
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
               child: Row(
                 children: [
-                  const Text("My Profile",
-                      style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 28,
-                          decoration: TextDecoration.none)),
+                  const Text(
+                    "My Profile",
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 28,
+                    ),
+                  ),
                   const Spacer(),
                   CircleAvatar(
                     backgroundColor: Colors.green.shade50,
-                    // FIXED ICON NAME BELOW
-                    child: Icon(Icons.shield, color: Colors.green.shade800),
+                    child: Icon(Icons.shield_rounded, color: Colors.green.shade800),
                   ),
                 ],
               ),
@@ -59,28 +70,32 @@ class _ProfileViewState extends State<ProfileView> {
 
             // 2. SCROLLABLE AREA
             Expanded(
-              child: ListView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                children: [
-                  const SizedBox(height: 20),
-                  _buildUserCard(),
-                  const SizedBox(height: 40),
-                  const Text("CURRENT TRIGGERS",
-                      style: TextStyle(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator(color: Colors.black))
+                : ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    children: [
+                      const SizedBox(height: 20),
+                      _buildUserCard(),
+                      const SizedBox(height: 40),
+                      const Text(
+                        "CURRENT TRIGGERS",
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                           color: Colors.black38,
                           letterSpacing: 1.5,
-                          decoration: TextDecoration.none)),
-                  const SizedBox(height: 16),
-                  _buildTriggerWrap(),
-                  const SizedBox(height: 40),
-                ],
-              ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTriggerWrap(),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
             ),
 
-            // 3. FIXED BUTTON
+            // 3. FIXED BUTTON (The "Action" Area)
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -97,8 +112,8 @@ class _ProfileViewState extends State<ProfileView> {
                 width: double.infinity,
                 height: 60,
                 child: ElevatedButton.icon(
-                  onPressed: _reset,
-                  icon: const Icon(Icons.edit_note_rounded),
+                  onPressed: _navigateToEdit,
+                  icon: const Icon(Icons.tune_rounded),
                   label: const Text("UPDATE PREFERENCES"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
@@ -126,25 +141,29 @@ class _ProfileViewState extends State<ProfileView> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.account_circle, size: 50, color: Colors.black26),
-          SizedBox(width: 15),
+          const Icon(Icons.account_circle, size: 50, color: Colors.black26),
+          const SizedBox(width: 15),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Verified Human",
-                  style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                      decoration: TextDecoration.none,
-                      color: Colors.black)),
-              Text("Personalized Safety Active",
-                  style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                      decoration: TextDecoration.none)),
+              const Text(
+                "Verified Human",
+                style: TextStyle(
+                  fontWeight: FontWeight.w900, 
+                  fontSize: 16, 
+                  color: Colors.black
+                ),
+              ),
+              Text(
+                "Personalized Safety Engine Active",
+                style: TextStyle(
+                  color: Colors.green.shade700,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
+              ),
             ],
           ),
         ],
@@ -154,19 +173,24 @@ class _ProfileViewState extends State<ProfileView> {
 
   Widget _buildTriggerWrap() {
     if (_currentPrefs.isEmpty) {
-      return const Text("No allergies or diets selected.",
-          style: TextStyle(
-              color: Colors.black38,
-              fontSize: 14,
-              decoration: TextDecoration.none));
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Text(
+          "No triggers selected. Your engine is currently allowing all ingredients.",
+          style: TextStyle(color: Colors.black38, fontSize: 13, height: 1.4),
+        ),
+      );
     }
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: _currentPrefs
           .map((p) => Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.red.shade900,
                   borderRadius: BorderRadius.circular(12),
@@ -174,16 +198,15 @@ class _ProfileViewState extends State<ProfileView> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.warning_amber_rounded,
-                        size: 14, color: Colors.white),
+                    const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.white),
                     const SizedBox(width: 8),
                     Text(
                       p.toUpperCase(),
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                          decoration: TextDecoration.none),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),
